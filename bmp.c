@@ -1,132 +1,158 @@
-#include <stdint.h>
-#include <stdio.h>
 #include <malloc.h>
+#include <string.h>
+#include "bmp.h"
 
-#pragma pack(push, 2)
-struct _BITMAPFILEHEADER {
-    uint16_t bfType;
-    uint32_t bfSize;
-    uint32_t bfReserved;
-    uint32_t bfOffBits;
-};
-struct _BITMAPINFOHEADER {
-    uint32_t biSize;
-    uint32_t biWidth;
-    uint32_t biHeight;
-    uint16_t biPlanes;
-    uint16_t biBitCount;
-    uint32_t biCompression;
-    uint32_t biSizeImage;
-    uint32_t biXPelsPerMeter;
-    uint32_t biYPelsPerMeter;
-    uint32_t biClrUsed;
-    uint32_t biClrImportant;
-};
-struct _pixel {
-    uint8_t r, g, b;
-};
-#pragma pack(pop)
+static enum read_status read_bmp_header(FILE *file, struct bmp_header *header) {
 
-typedef struct _pixel pixel;
+    if (!file) return READ_INVALID_FILE;
 
-typedef struct {
-    uint64_t width, height;
-    pixel **data;
-} image;
+    if (fread(&header->file, sizeof(header->file), 1, file) != 1) return READ_INVALID_FILE;
 
-typedef struct _BITMAPFILEHEADER BITMAPFILEHEADER;
-typedef struct _BITMAPINFOHEADER BITMAPINFOHEADER;
+    if (header->file.bfType != 0x4D42) return READ_INVALID_BITMAP_FILE_HEADER;
 
-typedef enum {
-    READ_OK = 0,
-    READ_INVALID_BITMAP_FILE_HEADER,
-    READ_INVALID_BITMAP_INFO_HEADER,
-    READ_INVALID_FILE,
-    READ_ALLOCATE_MEMORY_ERROR,
-    READ_FILE_UNSUPPORTED_VERSION
-} read_status;
+    if (header->file.bfReserved) return READ_INVALID_BITMAP_FILE_HEADER;
 
-typedef enum {
-    WRITE_OK = 0,
-    WRITE_INVALID_FILE,
-    WRITE_NULL_PTR_IMAGE
-} write_status;
+    if (fread(&header->info, sizeof(header->info), 1, file) != 1) return READ_INVALID_FILE;
 
-read_status bmp_from_file(FILE *file, image *const img) {
-    if (!file)
-        return READ_INVALID_FILE;
-    BITMAPFILEHEADER *bitmapfileheader = malloc(sizeof(BITMAPFILEHEADER));
-    if (!bitmapfileheader)
-        return READ_ALLOCATE_MEMORY_ERROR;
-    if (fread(bitmapfileheader, sizeof(BITMAPFILEHEADER), 1, file) != 1)
-        return READ_INVALID_FILE;
-    if (bitmapfileheader->bfType != 0x4D42)
-        return READ_INVALID_BITMAP_FILE_HEADER;
-    if (bitmapfileheader->bfReserved)
-        return READ_INVALID_BITMAP_FILE_HEADER;
-    BITMAPINFOHEADER *bitmapinfoheader = malloc(sizeof(BITMAPINFOHEADER));
-    if (!bitmapinfoheader)
-        return READ_ALLOCATE_MEMORY_ERROR;
-    if (fread(bitmapinfoheader, sizeof(BITMAPINFOHEADER), 1, file) != 1)
-        return READ_INVALID_FILE;
-    if (bitmapinfoheader->biSize != 0x28)
-        return READ_FILE_UNSUPPORTED_VERSION;
-    if (bitmapinfoheader->biWidth < 1 || bitmapinfoheader->biHeight < 1)
-        return READ_INVALID_BITMAP_INFO_HEADER;
-    img->width = bitmapinfoheader->biWidth;
-    img->height = bitmapinfoheader->biHeight;
-    if (bitmapinfoheader->biPlanes != 1)
-        return READ_INVALID_BITMAP_INFO_HEADER;
-    if (bitmapinfoheader->biBitCount != 8)
-        return READ_FILE_UNSUPPORTED_VERSION;
-    if (bitmapinfoheader->biCompression)
-        return READ_FILE_UNSUPPORTED_VERSION;
-    fseek(file, bitmapfileheader->bfOffBits, SEEK_SET);
-    uint64_t sizeBits = 3 * img->width * img->height + img->width % 4 * img->width;
-    uint8_t *buffer_pixel = malloc(sizeBits);
-    /*free(bitmapfileheader);
-    free(bitmapinfoheader);*/
-    if (!buffer_pixel)
-        return READ_ALLOCATE_MEMORY_ERROR;
-    if (fread(buffer_pixel, sizeof(buffer_pixel), 1, file) != 1)
-        return READ_INVALID_FILE;
-    pixel **pixels = malloc(sizeof(pixel *) * img->width);
-    if (!pixels)
-        return READ_ALLOCATE_MEMORY_ERROR;
-    for (uint64_t i = 0; i < img->width; ++i) {
-        pixels[i] = malloc(sizeof(pixel) * img->height);
-        if (!pixels[i])
-            return READ_ALLOCATE_MEMORY_ERROR;
-    }
-    uint64_t offset = img->width % 4;
-    uint64_t pointer = 0;
-    for (uint64_t i = img->width - 1; i > 0; --i) {
-        for (uint64_t j = 0; j < img->height; ++j) {
-            pixels[i][j].r = buffer_pixel[pointer++];
-            pixels[i][j].g = buffer_pixel[pointer++];
-            pixels[i][j].b = buffer_pixel[pointer++];
-        }
-        pointer += offset;
-    }
-    free(buffer_pixel);
-    img->data = pixels;
+    if (header->info.biSize != 0x28) return READ_FILE_UNSUPPORTED_VERSION;
 
-    file = fopen("VTA.bmp", "w");
-    bitmapfileheader->bfOffBits = sizeof(BITMAPINFOHEADER) + sizeof(BITMAPFILEHEADER);
-    fwrite(bitmapfileheader, sizeof(BITMAPFILEHEADER), 1, file);
-    fwrite(bitmapinfoheader, sizeof(BITMAPINFOHEADER), 1, file);
-    fwrite(buffer_pixel, sizeBits, 1, file);
-    fclose(file);
+    if (header->info.biWidth < 1 || header->info.biHeight < 1) return READ_INVALID_BITMAP_INFO_HEADER;
+
+    if (header->info.biPlanes != 1) return READ_INVALID_BITMAP_INFO_HEADER;
+
+    if (header->info.biBitCount != 0x18) return READ_FILE_UNSUPPORTED_VERSION;
+
+    if (header->info.biCompression) return READ_FILE_UNSUPPORTED_VERSION;
 
     return READ_OK;
 }
 
-write_status bmp_to_file(FILE *file, image *const img) {
-    if (!file)
-        return WRITE_INVALID_FILE;
-    if (!img)
-        return WRITE_NULL_PTR_IMAGE;
-    BITMAPFILEHEADER* bitmapfileheader = malloc(sizeof(BITMAPFILEHEADER));
-    bitmapfileheader->bfType = 0x4D42;
-    bitmapfileheader->bfSize = 3 * img->width * img->height + img->width % 4 * img->width; //+ ; TODO
+struct pixel *image_get(
+        struct image *img,
+        uint64_t x,
+        uint64_t y
+) {
+    return img->data + y * img->width + x;
+}
+
+struct image image_create(
+        uint64_t width,
+        uint64_t height
+) {
+    return (struct image) {
+            .width = width,
+            .height = height,
+            .data = malloc(sizeof(struct pixel) * width * height)
+    };
+}
+
+
+void image_destroy(struct image *img) {
+    img->width = 0;
+    img->height = 0;
+    free(img->data);
+}
+
+
+static uint64_t bmp_padding(uint64_t width) { return width % 4; }
+
+enum read_status bmp_from_file(FILE *file, struct image *const img) {
+
+    struct bmp_header header;
+
+    const enum read_status read_header_stat = read_bmp_header(file, &header);
+    if (read_header_stat != READ_OK) return read_header_stat;
+
+    fseek(file, header.file.bfOffBits, SEEK_SET);
+
+    *img = image_create(header.info.biWidth, header.info.biHeight);
+
+    const uint64_t padding = bmp_padding(img->width);
+
+    for (uint64_t i = 0; i < img->height; i++)
+        if (fread(image_get(img, 0, i),
+                  img->width * sizeof(struct pixel),
+                  1,
+                  file
+        )) {
+            fseek(file, padding, SEEK_CUR);
+        } else {
+            image_destroy(img);
+            return READ_INVALID_FILE;
+        }
+// fopen( "w" ); -> "wb"
+    return READ_OK;
+}
+
+static struct bmp_header bmp_header_generate(
+        const struct image *img
+) {
+    struct bmp_header header;
+    header.file = (struct bmp_file_header) {
+            .bfType=0x4D42,
+            .bfReserved = 0,
+            .bfOffBits = sizeof(struct bmp_header),
+            .bfSize = (uint32_t) (sizeof(struct bmp_header) + (bmp_padding(img->width) + img->width * 3) * img->height)
+    };
+    header.info = (struct bmp_info_header) {0};
+    header.info.biSizeImage = (uint32_t) ((bmp_padding(img->width) + img->width * 3) * img->height);
+    header.info.biSize = 0x28;
+    header.info.biWidth = (uint32_t) (img->width);
+    header.info.biHeight = (uint32_t) (img->height);
+    header.info.biPlanes = 1;
+    header.info.biBitCount = 0x18;
+    return header;
+}
+
+enum write_status bmp_to_file(FILE *file, struct image *const img) {
+    if (!file) return WRITE_INVALID_FILE;
+    if (!img) return WRITE_NULL_PTR_IMAGE;
+
+
+    struct bmp_header header = bmp_header_generate(img);
+    fwrite(&header, sizeof(header), 1, file);
+    const uint64_t padding = bmp_padding(img->width);
+
+    uint64_t stub = 0;
+
+    for (uint64_t i = 0; i < img->height; i++)
+        if (!fwrite(image_get(img, 0, i),
+                    img->width * sizeof(struct pixel),
+                    1,
+                    file
+        )
+            ||
+            (padding && !fwrite(&stub, padding, 1, file)))
+            return WRITE_INVALID_FILE;
+
+    return WRITE_OK;
+}
+
+static void swap_pixel(struct pixel *left, struct pixel *right) {
+    struct pixel *temp = malloc(sizeof(struct pixel));
+    memcpy(temp, left, sizeof(struct pixel));
+    memcpy(left, right, sizeof(struct pixel));
+    memcpy(right, temp, sizeof(struct pixel));
+    free(temp);
+}
+
+void rotate180(struct image *img) {
+    for (uint64_t i = 0; i < img->height / 2; ++i)
+        for (uint64_t j = 0; j < img->width; ++j)
+            swap_pixel(image_get(img, i, j), image_get(img, img->height - i - 1, img->width - j - 1));
+}
+
+void rotate90(struct image *img) {
+    struct pixel *temp = malloc(sizeof(struct pixel));
+    for (uint64_t i = 0; i < img->height / 2; ++i)
+        for (uint64_t j = 0; j < img->width / 2; ++j) {
+            memcpy(temp, image_get(img, i, j), sizeof(struct pixel));
+            memcpy(image_get(img, i, j), image_get(img, j, img->height - i - 1), sizeof(struct pixel));
+            memcpy(image_get(img, j, img->height - i - 1), image_get(img, img->height - i - 1, img->width - j - 1),
+                   sizeof(struct pixel));
+            memcpy(image_get(img, img->height - i - 1, img->width - j - 1), image_get(img, img->width - j - 1, i),
+                   sizeof(struct pixel));
+            memcpy(image_get(img, img->width - j - 1, i), temp, sizeof(struct pixel));
+        }
+    free(temp);
 }
