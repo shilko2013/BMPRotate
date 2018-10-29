@@ -58,6 +58,9 @@ static uint64_t bmp_padding(uint64_t width) { return width % 4; }
 
 enum read_status bmp_from_file(FILE *file, struct image *const img) {
 
+    if (!file)
+        return READ_NULL_PTR_FILE;
+
     struct bmp_header header;
 
     const enum read_status read_header_stat = read_bmp_header(file, &header);
@@ -136,13 +139,18 @@ static void swap_pixel(struct pixel *left, struct pixel *right) {
     free(temp);
 }
 
-void rotate180(struct image *img) {
+int rotate180(struct image *img) {
+    if (!img)
+        return 0;
     for (uint64_t i = 0; i < img->height / 2; ++i)
         for (uint64_t j = 0; j < img->width; ++j)
             swap_pixel(image_get(img, i, j), image_get(img, img->height - i - 1, img->width - j - 1));
+    return 1;
 }
 
-void rotate90(struct image *img) {
+int rotate90(struct image *img) {
+    if (!img)
+        return 0;
     struct pixel *temp = malloc(sizeof(struct pixel));
     for (uint64_t i = 0; i < img->height / 2; ++i)
         for (uint64_t j = 0; j < img->width / 2; ++j) {
@@ -155,4 +163,5 @@ void rotate90(struct image *img) {
             memcpy(image_get(img, img->width - j - 1, i), temp, sizeof(struct pixel));
         }
     free(temp);
+    return 1;
 }

@@ -13,5 +13,5 @@ $(OBJ): $(SRC)
 	$(CC) $(CFLAGS) $(SRC)
 	
 clean:
-	rm -rf *.o $(EXECUTE)
+	rm -rf *.o 
 

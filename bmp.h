@@ -47,7 +47,8 @@ enum read_status {
     READ_INVALID_BITMAP_FILE_HEADER,
     READ_INVALID_BITMAP_INFO_HEADER,
     READ_INVALID_FILE,
-    READ_FILE_UNSUPPORTED_VERSION
+    READ_FILE_UNSUPPORTED_VERSION,
+    READ_NULL_PTR_FILE
 };
 
 enum write_status {
@@ -73,8 +74,8 @@ enum read_status bmp_from_file(FILE *file, struct image *const img);
 
 enum write_status bmp_to_file(FILE *file, struct image *const img);
 
-void rotate180(struct image * img);
+int rotate180(struct image * img);
 
-void rotate90(struct image * img);
+int rotate90(struct image * img);
 
 #endif
