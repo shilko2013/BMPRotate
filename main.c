@@ -4,20 +4,19 @@
 
 int main(void) {
 
-    FILE *f = fopen("VT.bmp", "rb");
+    FILE *f;
     struct image *img = malloc(sizeof(struct image));
+    f = fopen("1.bmp", "rb");
     printf("%d", bmp_from_file(f, img));
+    img = rotate_corner(img, 30);
     if (f)
         fclose(f);
-    if (rotate180(img)) {
-        f = fopen("VT180.bmp", "wb");
-        printf("%d", bmp_to_file(f, img));
+    f = fopen("2.bmp", "wb");
+    printf("%d", bmp_to_file(f, img));
+    if (f)
         fclose(f);
-    }
-    if (rotate90(img)) {
-        f = fopen("VT270.bmp", "wb");
-        printf("%d", bmp_to_file(f, img));
-        fclose(f);
-    }
+    image_destroy(img);
+    free(img);
+
     return 0;
 }

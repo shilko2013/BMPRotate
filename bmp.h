@@ -27,7 +27,6 @@ struct bmp_header {
     struct bmp_file_header file;
     struct bmp_info_header info;
 };
-//youcompleteme
 
 struct pixel {
     uint8_t r, g, b;
@@ -77,5 +76,9 @@ enum write_status bmp_to_file(FILE *file, struct image *const img);
 int rotate180(struct image * img);
 
 int rotate90(struct image * img);
+
+void image_destroy(struct image *img);
+
+struct image* rotate_corner(struct image * img, int corner);
 
 #endif

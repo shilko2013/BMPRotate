@@ -1,5 +1,7 @@
 #include <malloc.h>
 #include <string.h>
+#include <stdlib.h>
+#include <math.h>
 #include "bmp.h"
 
 static enum read_status read_bmp_header(FILE *file, struct bmp_header *header) {
@@ -42,7 +44,7 @@ struct image image_create(
     return (struct image) {
             .width = width,
             .height = height,
-            .data = malloc(sizeof(struct pixel) * width * height)
+            .data = calloc(sizeof(struct pixel), width * height)
     };
 }
 
@@ -164,4 +166,86 @@ int rotate90(struct image *img) {
         }
     free(temp);
     return 1;
+}
+
+struct image *rotate_corner(struct image *img, int corner) {
+    double ob, oh, aboh, dx, dy, new_height, new_width;
+    int angle, rotate_angle;
+    uint64_t new_x, new_y;
+    uint64_t width = img->width;
+    uint64_t height = img->height;
+
+    angle = corner;
+
+//приводим его к значению от 0 до 360
+    if (angle < 0)
+        angle = (angle % 360) + 360;
+    else
+        angle = angle % 360;
+
+    if (angle <= 180) {
+        rotate_angle = angle % 180;
+        if (rotate_angle > 90)
+            rotate_angle = 180 - rotate_angle;
+    } else {
+        rotate_angle = abs(angle - 360);
+        if (rotate_angle > 90)
+            rotate_angle = 180 - rotate_angle;
+    }
+//новые размеры
+    new_width = 2 * (sqrt(pow(width, 2) +
+                          pow(height, 2)) / 2 *
+                     sin(atan((double) width / height) + rotate_angle * M_PI / 180));
+    new_height = 2 * (sqrt(pow(width, 2) +
+                           pow(height, 2)) / 2 *
+                      sin(atan((double) height / width) + rotate_angle * M_PI / 180));
+//сдвиги
+    dx = (new_width - width) / 2;
+    dy = (new_height - height) / 2;
+//сдвигаем координаты элемента
+    /*Image1.Left:=ImageLeft-round(dx);
+    Image1.Top:=ImageTop-round(dy);*/
+
+    struct image *result = malloc(sizeof(struct image));
+    *result = image_create((uint64_t) round(new_width), (uint64_t) round(new_width));
+//Важно!!!
+    /*new_width = (new_width - 1);
+    new_height = (new_height - 1);*/
+
+    for (uint64_t j = 0; j < (uint64_t) round(new_width); ++j) {
+        for (uint64_t k = 0; k < (uint64_t) round(new_height); ++k) {
+            ob = sqrt(pow(new_width / 2 - j, 2) +
+                      pow(new_height / 2 - k, 2));
+            oh = new_width / 2 - j;
+            if (ob)
+                aboh = acos((oh<0?-oh:oh) / ob);
+            else
+                aboh = 0;
+            if (((k >= new_height / 2) && (j < new_width / 2)) ||
+                ((k < new_height / 2) && (j >= new_width / 2)))
+                aboh *= -1;
+            if (oh > 0) {
+//новые координаты для четвертей 2 и 3
+                new_x = (uint64_t) round(new_width / 2 - cos(aboh + angle * M_PI / 180) * ob - dx);
+                new_y = (uint64_t) round(new_height / 2 - sin(aboh + angle * M_PI / 180) * ob - dy);
+            } else {
+//новые координаты для четвертей 1 и 4
+                new_x = (uint64_t) round(new_width / 2 - cos(aboh + angle * M_PI / 180 + M_PI) * ob - dx);
+                new_y = (uint64_t) round(new_height / 2 - sin(aboh + angle * M_PI / 180 + M_PI) * ob - dy);
+            }
+//если полученные координаты попадают в старое изображение...
+            if ((new_x >= 0) && (new_y >= 0)
+                && (new_x <= width - 1)
+                && (new_y <= height - 1))
+//...берем из него точку
+                memcpy(image_get(result, j, k), image_get(img, new_x, new_y), sizeof(struct pixel));
+            /*else
+                bm.Canvas.Pixels[j, k]=$f5f5f5;*/
+        }
+    }
+//выводим результат
+    //Image1.Picture.Bitmap.Assign(bm);
+    image_destroy(img);
+    free(img);
+    return result;
 }
